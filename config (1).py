@@ -8,8 +8,8 @@ Configuration for Telegram Inactive Channel Scanner
 
 # ── Telegram API credentials ──────────────────────────────────────────────────
 # Get these from https://my.telegram.org → "API development tools"
-API_ID   =   37881574       # Replace with your API ID (integer)
-API_HASH = "8089162cfb211f374a1112ec910d1b2c"   # Replace with your API hash (string)
+API_ID   =37881574       # Replace with your API ID (integer)
+API_HASH ="8089162cfb211f374a1112ec910d1b2c"   # Replace with your API hash (string)
 
 # Session file name (keeps you logged in between runs)
 SESSION_NAME = "7147866789"
