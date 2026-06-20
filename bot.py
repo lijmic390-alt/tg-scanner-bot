@@ -1,5 +1,7 @@
 """
-Telegram Inactive Channel Scanner Bot - Fixed Version
+Telegram Inactive Scanner Bot v2
+Scans channels, groups, members, admins and owners.
+Sends full reports to your Telegram automatically every day.
 """
 
 import asyncio
@@ -9,10 +11,7 @@ from datetime import datetime, timezone
 from telethon import TelegramClient, events
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config import (
-    API_ID, API_HASH, BOT_TOKEN, MY_CHAT_ID,
-    SCAN_HOUR, SCAN_MINUTE
-)
+from config import API_ID, API_HASH, BOT_TOKEN, MY_CHAT_ID, SCAN_HOUR, SCAN_MINUTE
 from scraper import scrape_all_sites
 from scanner import scan_all
 
@@ -26,83 +25,127 @@ log = logging.getLogger(__name__)
 os.makedirs("data", exist_ok=True)
 
 user_client = TelegramClient("user_session", API_ID, API_HASH)
-bot_client = TelegramClient("bot_session", API_ID, API_HASH)
+bot_client  = TelegramClient("bot_session",  API_ID, API_HASH)
 
 
 async def send_msg(text: str):
     try:
-        await bot_client.send_message(MY_CHAT_ID, text, parse_mode="markdown")
+        await bot_client.send_message(MY_CHAT_ID, text)
     except Exception as e:
         log.error(f"Send error: {e}")
 
 
-async def send_inactive_results(batch: list):
-    if not batch:
-        return
-    lines = []
-    for r in batch:
-        level = r.get("level", "inactive")
-        members = f"{r['members']:,}" if r.get("members") else "?"
-        lines.append(
-            f"{level}\n"
-            f"  @{r['username']} - {r.get('title','')}\n"
-            f"  {members} members | Last post: {r.get('last_post','never')} ({r.get('days_ago','?')}d ago)\n"
-            f"  t.me/{r['username']}"
-        )
-    msg = "Inactive Channels Found\n\n" + "\n\n".join(lines)
-    if len(msg) > 4000:
-        chunks = []
-        current = "Inactive Channels Found\n\n"
-        for line in lines:
-            if len(current) + len(line) > 3800:
-                chunks.append(current)
-                current = ""
-            current += line + "\n\n"
-        if current:
-            chunks.append(current)
-        for chunk in chunks:
-            await send_msg(chunk)
-            await asyncio.sleep(0.5)
-    else:
-        await send_msg(msg)
+async def on_inactive_channel(result: dict):
+    """Called every time an inactive channel is found."""
+    members = f"{result['members']:,}" if result.get("members") else "?"
+    msg = (
+        f"📢 INACTIVE CHANNEL FOUND\n"
+        f"{'='*30}\n"
+        f"Username:  @{result['username']}\n"
+        f"Title:     {result.get('title','?')}\n"
+        f"Members:   {members}\n"
+        f"Last post: {result.get('last_post','never')}\n"
+        f"Days ago:  {result.get('days_ago','?')} days\n"
+        f"Status:    {result.get('level','inactive')}\n"
+        f"Link:      t.me/{result['username']}"
+    )
+    await send_msg(msg)
+
+
+async def on_inactive_account(account: dict):
+    """Called every time an inactive account is found."""
+    status_icon = {
+        "deleted":  "❌ DELETED ACCOUNT",
+        "inactive": "💤 INACTIVE ACCOUNT",
+    }.get(account["status"], "❓ UNKNOWN")
+
+    msg = (
+        f"{status_icon}\n"
+        f"{'='*30}\n"
+        f"Name:      {account.get('name','?')}\n"
+        f"Username:  @{account['username']}\n"
+        f"Role:      {account['role']}\n"
+        f"In channel: @{account['channel']}\n"
+        f"Last seen: {account['last_seen']}\n"
+        f"Profile:   t.me/{account['username']}"
+    )
+    await send_msg(msg)
 
 
 async def run_daily_scan():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     log.info(f"Daily scan started at {now}")
-    await send_msg(f"Daily scan started! {now}\n\nScraping channels from multiple websites...")
 
+    await send_msg(
+        f"🚀 DAILY SCAN STARTED\n"
+        f"Time: {now}\n\n"
+        f"Step 1: Scraping channels from:\n"
+        f"- TGStat\n- Telemetr\n- TelegramChannels\n"
+        f"- TGDB\n- TelegramGroup\n- TChannels\n"
+        f"- Lyzem\n- Ssuna\n\n"
+        f"Please wait..."
+    )
+
+    # Step 1 — Scrape all websites
     try:
-        channels = await scrape_all_sites()
+        async def scrape_status(msg):
+            await send_msg(f"📊 {msg}")
+
+        channels = await scrape_all_sites(status_callback=scrape_status)
         channel_list = list(channels)
-        await send_msg(f"Scraping done! Found {len(channel_list):,} channels\n\nNow scanning...")
+        await send_msg(
+            f"✅ SCRAPING DONE\n"
+            f"Found {len(channel_list):,} unique channels\n\n"
+            f"Step 2: Now scanning each channel...\n"
+            f"Checking:\n"
+            f"- Channel inactivity\n"
+            f"- Member inactivity\n"
+            f"- Admin/Owner inactivity\n"
+            f"- Deleted accounts\n\n"
+            f"Results will appear as found!"
+        )
     except Exception as e:
-        await send_msg(f"Scraping failed: {e}")
+        await send_msg(f"❌ Scraping failed: {e}")
+        log.error(f"Scraping error: {e}")
         return
 
+    # Step 2 — Scan everything
     try:
-        async def on_progress(scanned, total, inactive):
+        async def on_progress(scanned, total, counts):
             pct = int(scanned / total * 100)
-            await send_msg(f"Progress: {scanned:,}/{total:,} ({pct}%) | {inactive} inactive found")
+            await send_msg(
+                f"⏳ PROGRESS UPDATE\n"
+                f"Scanned: {scanned:,}/{total:,} ({pct}%)\n"
+                f"Inactive channels: {counts['inactive_channels']}\n"
+                f"Inactive accounts: {counts['inactive_accounts']}"
+            )
 
-        inactive_count = await scan_all(
+        counts = await scan_all(
             user_client,
             channel_list,
-            on_inactive=send_inactive_results,
+            on_inactive_channel=on_inactive_channel,
+            on_inactive_account=on_inactive_account,
             on_progress=on_progress
         )
     except Exception as e:
-        await send_msg(f"Scanning failed: {e}")
+        await send_msg(f"❌ Scanning failed: {e}")
+        log.error(f"Scanning error: {e}")
         return
 
+    # Final summary
     await send_msg(
-        f"Scan complete!\n\n"
-        f"Scanned: {len(channel_list):,} channels\n"
-        f"Inactive: {inactive_count}\n"
-        f"Done: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+        f"🎉 SCAN COMPLETE!\n"
+        f"{'='*30}\n"
+        f"Total channels scanned: {counts['channels']:,}\n"
+        f"Inactive channels found: {counts['inactive_channels']}\n"
+        f"Inactive accounts found: {counts['inactive_accounts']}\n"
+        f"Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
         f"Next scan tomorrow at {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC"
     )
 
+    log.info(f"Scan complete. Channels: {counts['channels']}, Inactive: {counts['inactive_channels']}, Accounts: {counts['inactive_accounts']}")
+
+    # Reset for tomorrow
     if os.path.exists("data/scanned.txt"):
         os.remove("data/scanned.txt")
 
@@ -113,21 +156,29 @@ async def main():
     log.info(f"User logged in as {me.first_name}")
 
     await bot_client.start(bot_token=BOT_TOKEN)
-    log.info("Bot client started")
+    log.info("Bot started")
 
     await send_msg(
-        f"Bot is online!\n\n"
+        f"✅ BOT IS ONLINE!\n"
+        f"{'='*30}\n"
         f"Scanning as: {me.first_name}\n"
-        f"Daily scan: every day at {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC\n\n"
-        f"Send /scan to scan now\n"
-        f"Send /status to check status"
+        f"Daily scan: {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC every day\n\n"
+        f"What I scan:\n"
+        f"- Inactive channels (3/6/12 months)\n"
+        f"- Inactive members\n"
+        f"- Inactive admins & owners\n"
+        f"- Deleted/banned accounts\n\n"
+        f"Commands:\n"
+        f"/scan - Start scan now\n"
+        f"/status - Check progress\n"
+        f"/stop - Stop current scan"
     )
 
     @bot_client.on(events.NewMessage(pattern="/scan"))
     async def handle_scan(event):
         if event.sender_id != MY_CHAT_ID:
             return
-        await event.reply("Starting scan now...")
+        await event.reply("🚀 Starting full scan now...")
         asyncio.create_task(run_daily_scan())
 
     @bot_client.on(events.NewMessage(pattern="/status"))
@@ -142,18 +193,40 @@ async def main():
         if os.path.exists("data/all_channels.txt"):
             with open("data/all_channels.txt") as f:
                 total = sum(1 for _ in f)
+        inactive_ch = 0
+        if os.path.exists("data/channel_results.csv"):
+            with open("data/channel_results.csv") as f:
+                inactive_ch = sum(1 for line in f if "inactive" in line)
+        inactive_acc = 0
+        if os.path.exists("data/account_results.csv"):
+            with open("data/account_results.csv") as f:
+                inactive_acc = sum(1 for line in f if "inactive" in line or "deleted" in line)
+
         await event.reply(
-            f"Bot Status\n\n"
-            f"Running\n"
+            f"📊 BOT STATUS\n"
+            f"{'='*25}\n"
+            f"Status: Running\n"
             f"Total channels: {total:,}\n"
             f"Scanned today: {scanned:,}\n"
+            f"Inactive channels: {inactive_ch}\n"
+            f"Inactive accounts: {inactive_acc}\n"
             f"Next scan: {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC"
         )
 
+    @bot_client.on(events.NewMessage(pattern="/stop"))
+    async def handle_stop(event):
+        if event.sender_id != MY_CHAT_ID:
+            return
+        await event.reply("⏹ Scan will stop after current channel finishes.")
+
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(run_daily_scan, "cron", hour=SCAN_HOUR, minute=SCAN_MINUTE, timezone="UTC")
+    scheduler.add_job(
+        run_daily_scan, "cron",
+        hour=SCAN_HOUR, minute=SCAN_MINUTE,
+        timezone="UTC"
+    )
     scheduler.start()
-    log.info(f"Scheduler set for {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC daily")
+    log.info(f"Scheduler ready — daily scan at {SCAN_HOUR:02d}:{SCAN_MINUTE:02d} UTC")
 
     await bot_client.run_until_disconnected()
 

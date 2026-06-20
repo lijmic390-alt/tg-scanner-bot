@@ -3,26 +3,28 @@
 # ============================================================
 
 # Your Telegram API (from https://my.telegram.org)
-API_ID   = 37881574
-API_HASH = "8089162cfb211f374a1112ec910d1b2c"
+API_ID   = 12345678
+API_HASH = "your_api_hash"
 
-# Your Telegram Bot token (from @BotFather on Telegram)
-BOT_TOKEN = "8766389548:AAFEx0i8jh0rHolh7-ZGwLZLHVUgD2_m6uU"
+# Your Telegram Bot token (from @BotFather)
+BOT_TOKEN = "your_bot_token"
 
-# Your Telegram user ID (the bot sends results to YOU)
-# Get it by messaging @userinfobot on Telegram
-MY_CHAT_ID = 7147866789
+# Your Telegram user ID (from @userinfobot)
+MY_CHAT_ID = 123456789
 
-# Inactivity levels (days)
+# Inactivity thresholds for CHANNELS (days)
 INACTIVE_90  = 90    # 3 months
 INACTIVE_180 = 180   # 6 months
 INACTIVE_365 = 365   # 1 year
 
-# Scan time every day (24h format)
-SCAN_HOUR   = 9   # 9 AM
+# Scan time every day (UTC)
+SCAN_HOUR   = 9
 SCAN_MINUTE = 0
 
-# Priority categories (scanned first and deeper)
+# How many members to scan per group/channel
+MAX_MEMBERS_PER_GROUP = 200
+
+# Priority categories
 PRIORITY_CATEGORIES = [
     "cryptocurrency", "finance", "economics",
     "technology", "software", "business", "marketing"
