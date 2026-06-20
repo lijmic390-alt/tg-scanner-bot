@@ -3,14 +3,14 @@
 # ============================================================
 
 # Your Telegram API (from https://my.telegram.org)
-API_ID   = 12345678
-API_HASH = "your_api_hash"
+API_ID   = 37881574
+API_HASH = "8089162cfb211f374a1112ec910d1b2c"
 
 # Your Telegram Bot token (from @BotFather)
-BOT_TOKEN = "your_bot_token"
+BOT_TOKEN = "8766389548:AAFEx0i8jh0rHolh7-ZGwLZLHVUgD2_m6uU"
 
 # Your Telegram user ID (from @userinfobot)
-MY_CHAT_ID = 123456789
+MY_CHAT_ID = 7147866789
 
 # Inactivity thresholds for CHANNELS (days)
 INACTIVE_90  = 90    # 3 months
